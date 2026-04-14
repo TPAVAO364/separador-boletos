@@ -7,7 +7,7 @@ from pypdf import PdfReader, PdfWriter
 
 # ── Configuração da página ──────────────────────────────────────────────────
 st.set_page_config(
-    page_title="Separador de Boletos – Cond. Vale do Sol III",
+    page_title="Separador de Boletos PDF",
     page_icon="📄",
     layout="centered",
 )
@@ -17,6 +17,14 @@ st.markdown(
     "Faça o upload do arquivo PDF com todos os boletos. "
     "O sistema irá separar cada página em um arquivo individual, "
     "renomeando automaticamente com o nome do condomínio, competência, unidade e pagador."
+)
+st.divider()
+
+# ── Nome do condomínio ──────────────────────────────────────────────────────
+nome_cond = st.text_input(
+    "Nome do condomínio",
+    value="Cond. Vale do Sol III",
+    help="Informe o nome que aparecerá no início de cada arquivo gerado.",
 )
 st.divider()
 
@@ -62,14 +70,14 @@ def extrair_info(lines: list[str]) -> tuple[str, str, str, bool]:
     return competencia, unit, pagador, is_acordo
 
 
-def nome_arquivo(competencia: str, unit: str, pagador: str, is_acordo: bool) -> str:
-    base = f"Cond. Vale do Sol III - {competencia} - UN {unit} - {pagador}"
+def nome_arquivo(cond: str, competencia: str, unit: str, pagador: str, is_acordo: bool) -> str:
+    base = f"{cond} - {competencia} - UN {unit} - {pagador}"
     if is_acordo:
         base += " - ACORDO"
     return re.sub(r'[<>:"/\\|?*]', "", base) + ".pdf"
 
 
-def processar_pdf(pdf_bytes: bytes) -> tuple[dict[str, bytes], list[str]]:
+def processar_pdf(pdf_bytes: bytes, cond: str) -> tuple[dict[str, bytes], list[str]]:
     reader = PdfReader(io.BytesIO(pdf_bytes))
     used_names: dict[str, int] = {}
     resultados: dict[str, bytes] = {}
@@ -81,7 +89,7 @@ def processar_pdf(pdf_bytes: bytes) -> tuple[dict[str, bytes], list[str]]:
             lines = text.split("\n")
 
             competencia, unit, pagador, is_acordo = extrair_info(lines)
-            filename = nome_arquivo(competencia, unit, pagador, is_acordo)
+            filename = nome_arquivo(cond, competencia, unit, pagador, is_acordo)
 
             key = filename.lower()
             if key in used_names:
@@ -122,33 +130,35 @@ if uploaded_file is not None:
     st.success(f"Arquivo carregado: **{uploaded_file.name}**")
 
     if st.button("⚙️ Processar boletos", type="primary", use_container_width=True):
-        with st.spinner("Processando... aguarde."):
-            try:
-                boletos, nomes = processar_pdf(pdf_bytes)
-                zip_bytes = criar_zip(boletos)
+        if not nome_cond.strip():
+            st.warning("⚠️ Informe o nome do condomínio antes de processar.")
+        else:
+            with st.spinner("Processando... aguarde."):
+                try:
+                    boletos, nomes = processar_pdf(pdf_bytes, nome_cond.strip())
+                    zip_bytes = criar_zip(boletos)
 
-                st.success(f"✅ **{len(boletos)} boletos** processados com sucesso!")
+                    st.success(f"✅ **{len(boletos)} boletos** processados com sucesso!")
 
-                st.download_button(
-                    label="⬇️ Baixar todos os boletos (.zip)",
-                    data=zip_bytes,
-                    file_name="Cond. Vale do Sol III - boletos separados.zip",
-                    mime="application/zip",
-                    use_container_width=True,
-                    type="primary",
-                )
+                    st.download_button(
+                        label="⬇️ Baixar todos os boletos (.zip)",
+                        data=zip_bytes,
+                        file_name=f"{nome_cond.strip()} - boletos separados.zip",
+                        mime="application/zip",
+                        use_container_width=True,
+                        type="primary",
+                    )
 
-                with st.expander(f"Ver lista dos {len(nomes)} arquivos gerados"):
-                    for i, nome in enumerate(nomes, 1):
-                        acordo = " 🔵" if "ACORDO" in nome else ""
-                        st.markdown(f"`{i:02d}.` {nome}{acordo}")
+                    with st.expander(f"Ver lista dos {len(nomes)} arquivos gerados"):
+                        for i, nome in enumerate(nomes, 1):
+                            acordo = " 🔵" if "ACORDO" in nome else ""
+                            st.markdown(f"`{i:02d}.` {nome}{acordo}")
 
-            except Exception as e:
-                st.error(f"Erro ao processar o arquivo: {e}")
-                st.exception(e)
+                except Exception as e:
+                    st.error(f"Erro ao processar o arquivo: {e}")
+                    st.exception(e)
 
 st.divider()
 st.caption(
-    "Desenvolvido para Cond. Vale do Sol III • "
     "Boletos identificados automaticamente por condomínio, competência, unidade e pagador."
 )

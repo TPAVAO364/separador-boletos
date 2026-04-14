@@ -28,7 +28,6 @@ def extrair_nome_cond(pdf_bytes: bytes) -> str:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             text = pdf.pages[0].extract_text() or ""
             first_line = text.split("\n")[0] if text else ""
-            # O nome aparece antes do primeiro ' - '
             partes = first_line.split(" - ")
             if partes:
                 return partes[0].strip()
@@ -56,8 +55,8 @@ def extrair_info(lines: list[str]) -> tuple[str, str, str, bool]:
         if not competencia:
             competencia = "00_0000"
 
-    # Unidade
-    unit_match = re.search(r"[Uu][Nn][Ii][Dd][Aa][Dd][Ee]:\s*(\d+)", first_line)
+    # Unidade — suporta "UNIDADE: 3" e "UNIDADE: BLOCO 1 - 111"
+    unit_match = re.search(r"[Uu][Nn][Ii][Dd][Aa][Dd][Ee].*?(\d+)\s*$", first_line)
     unit = unit_match.group(1) if unit_match else "?"
 
     # Acordo
@@ -176,4 +175,4 @@ if uploaded_file is not None:
 st.divider()
 st.caption(
     "Boletos identificados automaticamente por condomínio, competência, unidade e pagador."
-                    )
+                          )

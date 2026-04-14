@@ -20,6 +20,9 @@ st.markdown(
 )
 st.divider()
 
+# ── Sufixos de tipo de documento a remover do nome ─────────────────────────
+SUFIXOS_DOCUMENTO = ["BALANCETE", "EXTRATO", "AVISO", "DEMONSTRATIVO"]
+
 # ── Funções de extração ─────────────────────────────────────────────────────
 
 def extrair_nome_cond(pdf_bytes: bytes) -> str:
@@ -28,9 +31,13 @@ def extrair_nome_cond(pdf_bytes: bytes) -> str:
         with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
             text = pdf.pages[0].extract_text() or ""
             first_line = text.split("\n")[0] if text else ""
-            partes = first_line.split(" - ")
-            if partes:
-                return partes[0].strip()
+            is_recibo = bool(re.match(r"^RECIBO DO PAGADOR", first_line, re.IGNORECASE))
+            first_line = re.sub(r"^RECIBO DO PAGADOR[:\s]+", "", first_line, flags=re.IGNORECASE).strip()
+            nome = first_line.split(" - ")[0].strip()
+            if is_recibo:
+                for sufixo in SUFIXOS_DOCUMENTO:
+                    nome = re.sub(rf'\s+{sufixo}\s*$', '', nome, flags=re.IGNORECASE).strip()
+            return nome
     except Exception:
         pass
     return ""
@@ -40,24 +47,40 @@ def extrair_info(lines: list[str]) -> tuple[str, str, str, bool]:
     """Extrai competência, unidade, nome do pagador e se é acordo."""
     first_line = lines[0] if lines else ""
 
-    # Competência
-    comp_match = re.search(r"(\d{2}/\d{4})", first_line)
-    if comp_match:
-        competencia = comp_match.group(1).replace("/", "_")
-    else:
-        competencia = None
+    # Competência — busca linha "COMPOSIÇÃO DE ARRECADAÇÃO" primeiro
+    competencia = None
+    for line in lines:
+        m = re.search(r"COMPOSI[ÇC][ÃA]O.*?(\d{2}/\d{4})", line, re.IGNORECASE)
+        if m:
+            competencia = m.group(1).replace("/", "_")
+            break
+    if not competencia:
+        m = re.search(r"(\d{2}/\d{4})", first_line)
+        if m:
+            competencia = m.group(1).replace("/", "_")
+    if not competencia:
         for line in lines:
-            venc_match = re.search(r"PAGÁVEL.*?(\d{2}/\d{2}/\d{4})", line)
-            if venc_match:
-                d = venc_match.group(1)
+            m = re.search(r"PAGÁVEL.*?(\d{2}/\d{2}/\d{4})", line)
+            if m:
+                d = m.group(1)
                 competencia = f"{d[3:5]}_{d[6:10]}"
                 break
-        if not competencia:
-            competencia = "00_0000"
+    if not competencia:
+        competencia = "00_0000"
 
-    # Unidade — suporta "UNIDADE: 3" e "UNIDADE: BLOCO 1 - 111"
-    unit_match = re.search(r"[Uu][Nn][Ii][Dd][Aa][Dd][Ee].*?(\d+)\s*$", first_line)
-    unit = unit_match.group(1) if unit_match else "?"
+    # Unidade — tenta 1ª linha (último nº), depois busca "Unidade:" em todas
+    unit = None
+    m = re.search(r"[Uu][Nn][Ii][Dd][Aa][Dd][Ee].*?(\d+)\s*$", first_line)
+    if m:
+        unit = m.group(1)
+    if not unit:
+        for line in lines:
+            m = re.search(r"[Uu]nidade[:\s]+(.+?)(?:\s{3,}|$)", line)
+            if m:
+                unit = m.group(1).strip()
+                break
+    if not unit:
+        unit = "?"
 
     # Acordo
     is_acordo = any("ACORDO" in line.upper() for line in lines[:6])
@@ -135,7 +158,6 @@ if uploaded_file is not None:
     pdf_bytes = uploaded_file.read()
     st.success(f"Arquivo carregado: **{uploaded_file.name}**")
 
-    # Detecta o nome do condomínio automaticamente
     nome_detectado = extrair_nome_cond(pdf_bytes)
     nome_cond = st.text_input(
         "Nome do condomínio (detectado automaticamente — edite se necessário)",
@@ -175,4 +197,4 @@ if uploaded_file is not None:
 st.divider()
 st.caption(
     "Boletos identificados automaticamente por condomínio, competência, unidade e pagador."
-                          )
+                        )

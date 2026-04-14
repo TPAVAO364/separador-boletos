@@ -20,15 +20,22 @@ st.markdown(
 )
 st.divider()
 
-# ── Nome do condomínio ──────────────────────────────────────────────────────
-nome_cond = st.text_input(
-    "Nome do condomínio",
-    value="Cond. Vale do Sol III",
-    help="Informe o nome que aparecerá no início de cada arquivo gerado.",
-)
-st.divider()
-
 # ── Funções de extração ─────────────────────────────────────────────────────
+
+def extrair_nome_cond(pdf_bytes: bytes) -> str:
+    """Extrai o nome do condomínio da primeira linha da primeira página."""
+    try:
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            text = pdf.pages[0].extract_text() or ""
+            first_line = text.split("\n")[0] if text else ""
+            # O nome aparece antes do primeiro ' - '
+            partes = first_line.split(" - ")
+            if partes:
+                return partes[0].strip()
+    except Exception:
+        pass
+    return ""
+
 
 def extrair_info(lines: list[str]) -> tuple[str, str, str, bool]:
     """Extrai competência, unidade, nome do pagador e se é acordo."""
@@ -129,9 +136,17 @@ if uploaded_file is not None:
     pdf_bytes = uploaded_file.read()
     st.success(f"Arquivo carregado: **{uploaded_file.name}**")
 
+    # Detecta o nome do condomínio automaticamente
+    nome_detectado = extrair_nome_cond(pdf_bytes)
+    nome_cond = st.text_input(
+        "Nome do condomínio (detectado automaticamente — edite se necessário)",
+        value=nome_detectado,
+        help="Extraído da primeira linha do boleto. Pode ser alterado manualmente.",
+    )
+
     if st.button("⚙️ Processar boletos", type="primary", use_container_width=True):
         if not nome_cond.strip():
-            st.warning("⚠️ Informe o nome do condomínio antes de processar.")
+            st.warning("⚠️ Não foi possível detectar o nome do condomínio. Preencha o campo acima.")
         else:
             with st.spinner("Processando... aguarde."):
                 try:
@@ -161,4 +176,4 @@ if uploaded_file is not None:
 st.divider()
 st.caption(
     "Boletos identificados automaticamente por condomínio, competência, unidade e pagador."
-)
+                    )
